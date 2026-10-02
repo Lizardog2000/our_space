@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Heart Pong</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #111;
+    color: white;
+    font-family: Arial, sans-serif;
+
+    height: 100vh;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    overflow: hidden;
+}
+
+#game {
+    position: relative;
+
+    width: min(95vw, 500px);
+    height: min(90vh, 750px);
+
+    background: #191919;
+
+    border: 3px solid white;
+    border-radius: 20px;
+
+    overflow: hidden;
+
+    touch-action: none;
+}
+
+.paddle {
+    position: absolute;
+
+    width: 100px;
+    height: 15px;
+
+    background: white;
+
+    border-radius: 10px;
+
+    transform: translateX(-50%);
+}
+
+#player1 {
+    bottom: 25px;
+}
+
+#player2 {
+    top: 25px;
+}
+
+#heart {
+    position: absolute;
+
+    width: 28px;
+    height: 28px;
+
+    transform:
+        translate(-50%, -50%)
+        rotate(-45deg);
+
+    background: #ff3366;
+}
+
+#heart::before,
+#heart::after {
+    content: "";
+
+    position: absolute;
+
+    width: 28px;
+    height: 28px;
+
+    background: #ff3366;
+
+    border-radius: 50%;
+}
+
+#heart::before {
+    top: -14px;
+    left: 0;
+}
+
+#heart::after {
+    top: 0;
+    left: 14px;
+}
+
+#score {
+    position: absolute;
+
+    top: 50%;
+    left: 50%;
+
+    transform: translate(-50%, -50%);
+
+    font-size: 50px;
+
+    opacity: 0.15;
+}
+
+#menu {
+    position: absolute;
+
+    inset: 0;
+
+    background: rgba(0,0,0,.88);
+
+    display: flex;
+
+    flex-direction: column;
+
+    justify-content: center;
+
+    align-items: center;
+
+    gap: 15px;
+
+    z-index: 10;
+
+    padding: 20px;
+
+    text-align: center;
+}
+
+button {
+    border: none;
+
+    background: white;
+    color: black;
+
+    padding: 15px 30px;
+
+    border-radius: 30px;
+
+    font-size: 18px;
+
+    font-weight: bold;
+}
+
+input {
+    width: 230px;
+
+    padding: 13px;
+
+    border: none;
+
+    border-radius: 10px;
+
+    text-align: center;
+
+    font-size: 16px;
+}
+
+#roomLink {
+    max-width: 300px;
+
+    word-break: break-all;
+}
+
+</style>
+</head>
+
+
+<body>
+
+<div id="game">
+
+    <div id="score">0 : 0</div>
+
+    <div id="heart"></div>
+
+    <div id="player2" class="paddle"></div>
+
+    <div id="player1" class="paddle"></div>
+
+
+    <div id="menu">
+
+        <h1>❤️ Heart Pong</h1>
+
+        <button onclick="createRoom()">
+            Создать игру
+        </button>
+
+        <input
+            id="roomInput"
+            placeholder="Код комнаты"
+        >
+
+        <button onclick="joinRoom()">
+            Войти в игру
+        </button>
+
+        <div id="roomLink"></div>
+
+        <div id="status">
+            Подключение...
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+const game =
+    document.getElementById("game");
+
+const heart =
+    document.getElementById("heart");
+
+const player1 =
+    document.getElementById("player1");
+
+const player2 =
+    document.getElementById("player2");
+
+const score =
+    document.getElementById("score");
+
+const menu =
+    document.getElementById("menu");
+
+const roomInput =
+    document.getElementById("roomInput");
+
+const roomLink =
+    document.getElementById("roomLink");
+
+const statusText =
+    document.getElementById("status");
+
+
+let socket = null;
+
+let myPlayer = null;
+
+let room = null;
+
+
+// -------------------------
+// ПОДКЛЮЧЕНИЕ
+// -------------------------
+
+function connect() {
+
+    const protocol =
+        location.protocol === "https:"
+            ? "wss:"
+            : "ws:";
+
+    socket = new WebSocket(
+        protocol + "//" + location.host
+    );
+
+
+    socket.onopen = () => {
+
+        statusText.textContent =
+            "Подключено ❤️";
+    };
+
+
+    socket.onmessage = (event) => {
+
+        const data =
+            JSON.parse(event.data);
+
+
+        // Комната создана
+
+        if (data.type === "roomCreated") {
+
+            room = data.room;
+
+            myPlayer = data.player;
+
+            roomInput.value = room;
+
+
+            const link =
+                location.origin +
+                "?room=" +
+                room;
+
+
+            roomLink.innerHTML =
+                "Отправь другу эту ссылку:<br><br>" +
+                link;
+
+
+            statusText.textContent =
+                "Ждём второго игрока...";
+
+            return;
+        }
+
+
+        // Игрок вошёл
+
+        if (data.type === "joined") {
+
+            room = data.room;
+
+            myPlayer = data.player;
+
+            statusText.textContent =
+                "Ты игрок 2 ❤️";
+
+            return;
+        }
+
+
+        // Игра началась
+
+        if (data.type === "start") {
+
+            menu.style.display = "none";
+
+            return;
+        }
+
+
+        // Игровое состояние
+
+        if (data.type === "state") {
+
+            heart.style.left =
+                data.ball.x + "%";
+
+            heart.style.top =
+                data.ball.y + "%";
+
+
+            player1.style.left =
+                data.paddles[0] + "%";
+
+            player2.style.left =
+                data.paddles[1] + "%";
+
+
+            score.textContent =
+                data.score[0] +
+                " : " +
+                data.score[1];
+
+            return;
+        }
+
+
+        // Ошибка
+
+        if (data.type === "error") {
+
+            statusText.textContent =
+                data.message;
+
+            return;
+        }
+
+
+        // Друг вышел
+
+        if (data.type === "opponentLeft") {
+
+            menu.style.display = "flex";
+
+            statusText.textContent =
+                "Друг вышел из игры";
+
+        }
+
+    };
+
+
+    socket.onclose = () => {
+
+        statusText.textContent =
+            "Соединение потеряно";
+    };
+}
+
+
+// -------------------------
+// СОЗДАТЬ КОМНАТУ
+// -------------------------
+
+function createRoom() {
+
+    if (
+        !socket ||
+        socket.readyState !== WebSocket.OPEN
+    ) {
+        return;
+    }
+
+
+    socket.send(JSON.stringify({
+        type: "create"
+    }));
+}
+
+
+// -------------------------
+// ВОЙТИ
+// -------------------------
+
+function joinRoom() {
+
+    const id =
+        roomInput.value.trim();
+
+
+    if (!id) {
+
+        statusText.textContent =
+            "Введи код комнаты";
+
+        return;
+    }
+
+
+    if (
+        !socket ||
+        socket.readyState !== WebSocket.OPEN
+    ) {
+
+        statusText.textContent =
+            "Подключение...";
+
+        return;
+    }
+
+
+    socket.send(JSON.stringify({
+
+        type: "join",
+
+        room: id
+
+    }));
+}
+
+
+// -------------------------
+// ДВИЖЕНИЕ РАКЕТКИ
+// -------------------------
+
+function movePaddle(event) {
+
+    if (!socket) return;
+
+    if (
+        socket.readyState !==
+        WebSocket.OPEN
+    ) return;
+
+    if (myPlayer === null) return;
+
+
+    const rect =
+        game.getBoundingClientRect();
+
+
+    let x =
+        (
+            (event.clientX - rect.left)
+            / rect.width
+        ) * 100;
+
+
+    x = Math.max(
+        10,
+        Math.min(90, x)
+    );
+
+
+    socket.send(JSON.stringify({
+
+        type: "paddle",
+
+        x: x
+
+    }));
+}
+
+
+game.addEventListener(
+    "pointermove",
+    movePaddle
+);
+
+
+game.addEventListener(
+    "pointerdown",
+    movePaddle
+);
+
+
+// -------------------------
+// ССЫЛКА С КОДОМ КОМНАТЫ
+// -------------------------
+
+const params =
+    new URLSearchParams(
+        location.search
+    );
+
+
+const roomFromLink =
+    params.get("room");
+
+
+if (roomFromLink) {
+
+    roomInput.value =
+        roomFromLink;
+}
+
+
+// Запускаем соединение
+
+connect();
+
+</script>
+
+</body>
+</html>
